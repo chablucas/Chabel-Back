@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
+    "seed:teams": "node scripts/seedTeams.js",
+    "clear:teams": "node scripts/clearTeams.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
