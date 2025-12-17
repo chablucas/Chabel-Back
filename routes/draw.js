@@ -3,46 +3,55 @@ const express = require("express");
 const router = express.Router();
 
 const TEAMS = require("../data/teams");
-const { drawTeams } = require("../utils/draw");
+const { drawTeamsBalanced } = require("../utils/draw");
 
 /**
  * POST /draw
  * body: {
- *  tag: "friendly_international_clubs" | "world_cup_women" | ...
- *  type: "club" | "national"
- *  gender: "male" | "female"
- *  count: 8|16|32
- *  stars: [5] ou [3,4]
- *  mix: [{stars:5,count:8},{stars:4,count:8}] (optionnel)
+ *  tag: string,
+ *  type: "club" | "national",
+ *  gender: "male" | "female",
+ *  totalTeams: number (default 8),
+ *  perPlayer: number (default 4)
  * }
+ *
+ * response: { left: Team[], right: Team[], meta: {...} }
  */
 router.post("/", (req, res) => {
   try {
-    const { tag, type, gender, count, stars, mix } = req.body;
+    const {
+      tag,
+      type,
+      gender,
+      totalTeams = 8,
+      perPlayer = 4,
+    } = req.body;
 
-    if (!tag || !type || !gender || !count) {
-      return res.status(400).json({ message: "tag, type, gender, count requis" });
-    }
+    // ⚠️ adapte ce filtre à TON teams.js
+    // Supporte plusieurs styles possibles: t.tags (array) ou t.tag (string)
+    const teamsPool = TEAMS.filter((t) => {
+      const okTag =
+        !tag || (Array.isArray(t.tags) && t.tags.includes(tag)) || t.tag === tag;
 
-    const pool = TEAMS.filter(t =>
-      t.tags?.includes(tag) &&
-      t.type === type &&
-      t.gender === gender
-    );
+      const okType = !type || t.type === type;
+      const okGender = !gender || t.gender === gender;
 
-    const drawn = drawTeams({
-      pool,
-      count: Number(count),
-      stars: stars || null,
-      mix: mix || null,
+      return okTag && okType && okGender;
     });
 
-    res.json({
-      criteria: { tag, type, gender, count, stars, mix },
-      teams: drawn,
+    const result = drawTeamsBalanced({
+      teamsPool,
+      totalTeams: Number(totalTeams),
+      perPlayer: Number(perPlayer),
+    });
+
+    return res.json({
+      left: result.left,
+      right: result.right,
+      meta: result.meta,
     });
   } catch (e) {
-    res.status(400).json({ message: e.message || "Erreur tirage" });
+    return res.status(400).json({ message: e.message });
   }
 });
 

@@ -6,9 +6,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ✅ AJOUTE/VERIFIE CETTE LIGNE
 const tournamentsRoutes = require("./routes/tournaments");
+const drawRoutes = require("./routes/draw");
+
 app.use("/tournaments", tournamentsRoutes);
+app.use("/draw", drawRoutes);
 
 app.get("/", (req, res) => res.send("API OK"));
 
