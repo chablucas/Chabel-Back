@@ -23,12 +23,31 @@ const GroupSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// ✅ NEW: duel mode storage (J1/J2 split, stars meta, etc.)
+const DuelSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: false },
+    perPlayer: { type: Number, default: 4 }, // 4 teams each by default
+    tag: { type: String, default: null },
+    type: { type: String, default: null },
+    gender: { type: String, default: null },
+    players: [
+      {
+        name: { type: String, required: true },
+        teams: [{ type: String, required: true }],
+      },
+    ],
+    meta: { type: mongoose.Schema.Types.Mixed, default: null },
+  },
+  { _id: false }
+);
+
 const TournamentSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
     mode: {
       type: String,
-      enum: ["groups32", "knockout"],
+      enum: ["groups32", "knockout"], // ✅ on garde ça pour ne rien casser
       required: true,
     },
     teams: [{ type: String }], // list of team names (can be empty for knockout)
@@ -40,6 +59,9 @@ const TournamentSchema = new mongoose.Schema(
       },
       winner: { type: String, default: null },
     },
+
+    // ✅ NEW
+    duel: { type: DuelSchema, default: { enabled: false } },
   },
   { timestamps: true }
 );

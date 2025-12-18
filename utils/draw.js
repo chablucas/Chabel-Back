@@ -4,8 +4,12 @@ function getStars(team) {
   return Number(team.stars || team.rating || 0);
 }
 
+function sumStars(teams) {
+  return teams.reduce((acc, t) => acc + getStars(t), 0);
+}
+
 function countByStars(teams) {
-  const counts = { 1:0, 2:0, 3:0, 4:0, 5:0 };
+  const counts = { 1:0, 1.5:0, 2:0, 2.5:0, 3:0, 3.5:0, 4:0, 4.5:0, 5:0 };
   for (const t of teams) {
     const s = getStars(t);
     if (counts[s] !== undefined) counts[s]++;
@@ -13,127 +17,137 @@ function countByStars(teams) {
   return counts;
 }
 
-function sumStars(teams) {
-  return teams.reduce((acc, t) => acc + getStars(t), 0);
-}
-
 function scoreSplit(left, right) {
-  const sumL = sumStars(left);
-  const sumR = sumStars(right);
-  const diffSum = Math.abs(sumL - sumR);
+  const diffSum = Math.abs(sumStars(left) - sumStars(right));
 
   const cL = countByStars(left);
   const cR = countByStars(right);
 
-  // Diff de distribution (plus c’est proche, mieux c’est)
+  // Diff de distribution (1..5 et demi)
+  const keys = Object.keys(cL);
   let diffDist = 0;
-  for (let s = 1; s <= 5; s++) diffDist += Math.abs((cL[s] || 0) - (cR[s] || 0));
+  for (const k of keys) diffDist += Math.abs((cL[k] || 0) - (cR[k] || 0));
 
-  // Pondération : on privilégie d'abord la distribution, puis la somme
-  // (tu peux inverser si tu préfères total stars d'abord)
-  return (diffDist * 100) + diffSum;
+  // Priorité: distrib puis somme
+  return diffDist * 100 + diffSum;
 }
 
-// Génère toutes les combinaisons de k indices parmi n
-function combinations(n, k) {
-  const res = [];
-  const comb = [];
-
-  function backtrack(start, depth) {
-    if (depth === k) {
-      res.push([...comb]);
-      return;
-    }
-    for (let i = start; i <= n - (k - depth); i++) {
-      comb.push(i);
-      backtrack(i + 1, depth + 1);
-      comb.pop();
-    }
-  }
-
-  backtrack(0, 0);
-  return res;
-}
-
-// Tirage simple de N équipes uniques
-function pickRandomTeams(pool, n) {
-  const copy = [...pool];
-  // shuffle Fisher-Yates
-  for (let i = copy.length - 1; i > 0; i--) {
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
+    [a[i], a[j]] = [a[j], a[i]];
   }
-  return copy.slice(0, n);
+  return a;
 }
 
-function balancedSplit(teams, perPlayer) {
-  const n = teams.length;
-  const k = perPlayer;
-  if (n !== k * 2) {
-    throw new Error(`balancedSplit: teams.length (${n}) doit être = perPlayer*2 (${k*2})`);
+function pickRandomTeams(pool, n) {
+  return shuffle(pool).slice(0, n);
+}
+
+/**
+ * Split équilibré scalable (8/16/32):
+ * 1) Tri desc par stars
+ * 2) Répartition greedy pour équilibrer la somme (et taille égale)
+ * 3) Optimisation locale par swaps (améliore score distrib + somme)
+ */
+function balancedSplitGreedy(teams, perPlayer) {
+  const total = teams.length;
+  if (total !== perPlayer * 2) {
+    throw new Error(`balancedSplitGreedy: teams.length (${total}) != perPlayer*2 (${perPlayer*2})`);
   }
 
-  const all = combinations(n, k);
+  // Mélange léger pour éviter toujours mêmes splits à étoiles identiques
+  const randomized = shuffle(teams);
 
-  let best = null;
-  let bestScore = Infinity;
+  // Tri par étoiles desc, puis nom pour stabilité
+  const sorted = [...randomized].sort((a, b) => {
+    const ds = getStars(b) - getStars(a);
+    if (ds !== 0) return ds;
+    return String(a.name).localeCompare(String(b.name));
+  });
 
-  for (const idxs of all) {
-    const left = [];
-    const right = [];
+  const left = [];
+  const right = [];
 
-    const set = new Set(idxs);
-    for (let i = 0; i < n; i++) {
-      if (set.has(i)) left.push(teams[i]);
-      else right.push(teams[i]);
-    }
+  // Greedy : on place dans l’équipe qui a le moins d’étoiles, en respectant la taille
+  for (const t of sorted) {
+    const sumL = sumStars(left);
+    const sumR = sumStars(right);
 
-    const sc = scoreSplit(left, right);
+    const canL = left.length < perPlayer;
+    const canR = right.length < perPlayer;
+
+    if (canL && canR) {
+      if (sumL <= sumR) left.push(t);
+      else right.push(t);
+    } else if (canL) left.push(t);
+    else right.push(t);
+  }
+
+  // Optimisation locale : swaps pour réduire score
+  let bestL = left;
+  let bestR = right;
+  let bestScore = scoreSplit(bestL, bestR);
+
+  // nombre d’itérations raisonnable (rapide)
+  const maxIters = 4000;
+
+  for (let iter = 0; iter < maxIters; iter++) {
+    const i = Math.floor(Math.random() * perPlayer);
+    const j = Math.floor(Math.random() * perPlayer);
+
+    const newL = [...bestL];
+    const newR = [...bestR];
+
+    // swap
+    const tmp = newL[i];
+    newL[i] = newR[j];
+    newR[j] = tmp;
+
+    const sc = scoreSplit(newL, newR);
     if (sc < bestScore) {
       bestScore = sc;
-      best = { left, right, meta: {
-        leftSum: sumStars(left),
-        rightSum: sumStars(right),
-        leftDist: countByStars(left),
-        rightDist: countByStars(right),
-        score: sc
-      }};
-      // score 0 = parfait (même distrib ET même somme)
+      bestL = newL;
+      bestR = newR;
+
+      // parfait
       if (bestScore === 0) break;
     }
   }
 
-  return best;
+  return {
+    left: bestL,
+    right: bestR,
+    meta: {
+      leftSum: sumStars(bestL),
+      rightSum: sumStars(bestR),
+      leftDist: countByStars(bestL),
+      rightDist: countByStars(bestR),
+      score: bestScore,
+    },
+  };
 }
 
-/**
- * drawTeamsBalanced:
- * - filtre les équipes par tag/type/genre si besoin (selon ta structure)
- * - tire N équipes
- * - split équilibré en 1v1
- */
-function drawTeamsBalanced({ teamsPool, totalTeams = 8, perPlayer = 4 }) {
+function drawTeamsBalanced({ teamsPool, totalTeams, perPlayer }) {
   if (!Array.isArray(teamsPool) || teamsPool.length < totalTeams) {
-    throw new Error("Pas assez d'équipes dans ce tag.");
+    throw new Error("Pas assez d'équipes dans ce tag/filtre.");
   }
   if (totalTeams !== perPlayer * 2) {
-    throw new Error("totalTeams doit être égal à perPlayer*2 (ex: 8 et 4).");
+    throw new Error("totalTeams doit être égal à perPlayer*2 (ex: 16 et 8).");
   }
 
-  // 1) Tirage brut
   const picked = pickRandomTeams(teamsPool, totalTeams);
-
-  // 2) Split équilibré
-  const split = balancedSplit(picked, perPlayer);
+  const split = balancedSplitGreedy(picked, perPlayer);
 
   return {
     picked,
     left: split.left,
     right: split.right,
-    meta: split.meta
+    meta: split.meta,
   };
 }
 
 module.exports = {
-  drawTeamsBalanced
+  drawTeamsBalanced,
 };
